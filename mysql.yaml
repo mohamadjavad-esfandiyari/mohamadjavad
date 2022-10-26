@@ -1,0 +1,111 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: pv-volume-1
+  labels:
+    type: local
+spec:
+  storageClassName: manual
+  capacity:
+    storage: 10Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/mnt/data"
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: mysql-data
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: wordpress
+spec:
+  storageClassName: manual
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 10Gi
+
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name:  mysql-secret
+  labels:
+     app.kubernetes.io/name: mysql
+     app.kubernetes.io/part-of: wordpress
+type: Opaque
+stringData:
+  MYSQL_ROOT_PASSWORD: myhardpassword
+  MYSQL_DATABASE: wordpress
+  MYSQL_USER: test
+  MYSQL_PASSWORD: test
+---
+apiVersion: v1
+kind: Service 
+metadata:
+  name:  mysql
+  labels:
+     app.kubernetes.io/name: mysql
+     app.kubernetes.io/part-of: wordpress
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: wordpress
+  ports:
+  - name:  mysql
+    port:  3306
+    targetPort: 3306
+
+---
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: mysql
+  labels:
+    app.kubernetes.io/name: mysql
+    app.kubernetes.io/part-of: wordpress
+spec:
+  replicas: 2
+  serviceName: mysql
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: mysql
+      app.kubernetes.io/part-of: wordpress
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: mysql
+        app.kubernetes.io/part-of: wordpress
+    spec:
+      terminationGracePeriodSeconds: 10
+      containers:
+        - name: mysql
+          image: mysql:5.6
+          ports:
+            - name: tpc
+              protocol: TCP
+              containerPort: 3306
+          envFrom:
+            - secretRef:
+                name: mysql-secret
+          volumeMounts:
+            - name: mysql-data
+              mountPath: /var/lib/mysql
+          livenessProbe: 
+            initialDelaySeconds: 3
+            periodSeconds: 3
+            exec:
+              command: ["kill", "-0", "1"]
+          readinessProbe:
+            initialDelaySeconds: 30
+            periodSeconds: 5
+            tcpSocket:
+              port: 3306
+      volumes:
+        - name:  mysql-data
+          persistentVolumeClaim:
+            claimName: mysql-data
